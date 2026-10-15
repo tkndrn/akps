@@ -1,7 +1,7 @@
 
 from playwright.sync_api import sync_playwright
 
-TARGET_URL = "https://beyazelma78.com/kanal/bein-sports-1-fhd"
+TARGET_URL = "https://ronaldo.magnitude.workers.dev/?url=https://beyazelma78.com/kanal/bein-sports-1-fhd"
 
 def find_m3u8():
     found_links = []
