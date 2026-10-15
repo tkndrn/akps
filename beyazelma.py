@@ -1,79 +1,82 @@
-
 from playwright.sync_api import sync_playwright
-from urllib.parse import urlparse
-import os
-import sys
 
-TARGET_URL = os.getenv(
-    "TARGET_URL",
-    "https://beyazelma78.com/kanal/bein-sports-1-fhd"
-)
-
-found_links = set()
-
-def main():
+def find_m3u8():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
+        # GitHub ve sunucu ortamları için gerekli argümanlar
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
+        )
+        
+        # Gerçek bir kullanıcı gibi görünmek için context ayarları
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            java_script_enabled=True
+        )
+        
         page = context.new_page()
 
-        def on_request(request):
+        m3u8_links = []
+
+        # Ağ trafiğini hem ana sayfada hem de alt frame'lerde yakala
+        def handle_request(request):
             url = request.url
-            parsed = urlparse(url)
+            if ".m3u8" in url or "m3u8" in url.lower():
+                if url not in m3u8_links:
+                    m3u8_links.append(url)
+                    print(f"[+] Bulunan m3u8 Linki: {url}")
 
-            if ".m3u8" in parsed.path.lower():
-                if url not in found_links:
-                    found_links.add(url)
-                    print("[M3U8]", url, flush=True)
+        page.on("request", handle_request)
+        page.on("response", lambda response: handle_request(response.request))
 
-        page.on("request", on_request)
-
+        print("[-] Siteye bağlanılıyor...")
         try:
-            print("[INFO] Siteye bağlanılıyor...", flush=True)
+            # Hedef sayfaya git
+            page.goto("https://beyazelma78.com/kanal/bein-sports-1-fhd", timeout=60000)
+            
+            print("[-] Sayfa yüklendi, frame'ler ve oynatıcı tetikleniyor...")
+            
+            # Sayfa yüklenmesi için biraz bekle
+            page.wait_for_timeout(5000)
 
-            response = page.goto(
-                TARGET_URL,
-                wait_until="domcontentloaded",
-                timeout=60000
-            )
+            # Sayfadaki tüm iframe'leri listele ve onlara da tıklama simülasyonu yap
+            frames = page.frames
+            print(f"[-] Toplam frame/iframe sayısı: {len(frames)}")
+            
+            for frame in frames:
+                try:
+                    frame.click("body", timeout=2000)
+                except:
+                    pass
 
-            status = response.status if response else 0
-            print(f"[HTTP] {status}", flush=True)
-            print(f"[TITLE] {page.title()}", flush=True)
+            # Genel oynatıcı elementlerine tıklama denemesi
+            play_selectors = ["video", ".vjs-big-play-button", ".plyr__control--overlaid", "button", ".play-button", "div[id*='player']"]
+            for selector in play_selectors:
+                try:
+                    element = page.locator(selector).first
+                    if element.is_visible():
+                        element.click(timeout=2000)
+                        print(f"[+] '{selector}' seçicisine tıklandı.")
+                except:
+                    continue
 
-            if status == 403 or "Just a moment" in page.title():
-                print(
-                    "[UYARI] Cloudflare erişimi engelledi. "
-                    "İzinli erişim yöntemi gerekiyor.",
-                    flush=True
-                )
-                return
-
+            # Akışın yüklenmesi için süreyi biraz uzatalım (20 saniye)
+            print("[-] Akışın yakalanması bekleniyor...")
             page.wait_for_timeout(20000)
-
-            if found_links:
-                with open(
-                    "m3u8_result.txt", "w", encoding="utf-8"
-                ) as f:
-                    for link in sorted(found_links):
-                        f.write(link + "\n")
-
-                print(
-                    f"[OK] {len(found_links)} bağlantı bulundu.",
-                    flush=True
-                )
-            else:
-                print(
-                    "[SONUC] M3U8 isteği yakalanamadı.",
-                    flush=True
-                )
-
+            
         except Exception as e:
-            print(f"[HATA] {e}", flush=True)
-            sys.exit(1)
+            print(f"[!] Hata oluştu: {e}")
 
-        finally:
-            browser.close()
+        browser.close()
+        
+        if not m3u8_links:
+            print("[-] Doğrudan m3u8 isteği yakalanamadı. Site bot koruması kullanıyor veya video kaynağı şifrelenmiş olabilir.")
 
 if __name__ == "__main__":
-    main()
+    find_m3u8()
