@@ -1,8 +1,15 @@
 
-
 from playwright.sync_api import sync_playwright
+from urllib.parse import urlparse
+import os
+import sys
 
-TARGET_URL = "https://beyazelma78.com/kanal/bein-sports-1-fhd"
+TARGET_URL = os.getenv(
+    "TARGET_URL",
+    "https://beyazelma78.com/kanal/bein-sports-1-fhd"
+)
+
+found_links = set()
 
 def main():
     with sync_playwright() as p:
@@ -10,39 +17,19 @@ def main():
         context = browser.new_context()
         page = context.new_page()
 
-        found = set()
-
-        # Ana sayfa ve iframe isteklerini izle
         def on_request(request):
             url = request.url
-            if ".m3u8" in url.lower():
-                found.add(url)
-                print("[M3U8]", url, flush=True)
+            parsed = urlparse(url)
 
-        def on_response(response):
-            url = response.url
-            if "beyazelma78.com" in url:
-                print(
-                    "[SITE RESPONSE]",
-                    response.status,
-                    url,
-                    flush=True
-                )
-
-        def on_failed(request):
-            print(
-                "[REQUEST FAILED]",
-                request.url,
-                request.failure,
-                flush=True
-            )
+            if ".m3u8" in parsed.path.lower():
+                if url not in found_links:
+                    found_links.add(url)
+                    print("[M3U8]", url, flush=True)
 
         page.on("request", on_request)
-        page.on("response", on_response)
-        page.on("requestfailed", on_failed)
 
         try:
-            print("[1] Site açılıyor...", flush=True)
+            print("[INFO] Siteye bağlanılıyor...", flush=True)
 
             response = page.goto(
                 TARGET_URL,
@@ -50,42 +37,43 @@ def main():
                 timeout=60000
             )
 
-            print("[2] HTTP durumu:",
-                  response.status if response else "Yanıt yok",
-                  flush=True)
+            status = response.status if response else 0
+            print(f"[HTTP] {status}", flush=True)
+            print(f"[TITLE] {page.title()}", flush=True)
 
-            print("[3] Sayfa başlığı:",
-                  page.title(),
-                  flush=True)
+            if status == 403 or "Just a moment" in page.title():
+                print(
+                    "[UYARI] Cloudflare erişimi engelledi. "
+                    "İzinli erişim yöntemi gerekiyor.",
+                    flush=True
+                )
+                return
 
-            print("[4] Sayfa adresi:",
-                  page.url,
-                  flush=True)
-
-            print("[5] Iframe sayısı:",
-                  len(page.frames),
-                  flush=True)
-
-            for frame in page.frames:
-                print("[FRAME]", frame.url, flush=True)
-
-            print("[6] 20 saniye bekleniyor...", flush=True)
             page.wait_for_timeout(20000)
 
-            print("[SONUC] Bulunan M3U8:", len(found), flush=True)
+            if found_links:
+                with open(
+                    "m3u8_result.txt", "w", encoding="utf-8"
+                ) as f:
+                    for link in sorted(found_links):
+                        f.write(link + "\n")
 
-            if not found:
                 print(
-                    "[BILGI] Bu oturumda M3U8 isteği görülmedi.",
+                    f"[OK] {len(found_links)} bağlantı bulundu.",
+                    flush=True
+                )
+            else:
+                print(
+                    "[SONUC] M3U8 isteği yakalanamadı.",
                     flush=True
                 )
 
         except Exception as e:
-            print("[HATA]", repr(e), flush=True)
+            print(f"[HATA] {e}", flush=True)
+            sys.exit(1)
 
         finally:
             browser.close()
 
 if __name__ == "__main__":
     main()
-
